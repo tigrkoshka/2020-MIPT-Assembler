@@ -25,7 +25,17 @@ union {
 const unsigned MEMORY_SIZE = 1u << 20u;
 const unsigned REGISTER_NUM = 1u << 4u;
 
-enum codes {
+enum syscall_codes {
+    EXIT = 0,
+    SCANINT = 100,
+    SCANDOUBLE = 101,
+    PRINTINT = 102,
+    PRINTDOUBLE = 103,
+    GETCHAR = 104,
+    PUTCHAR = 105
+};
+
+enum command_codes {
     HALT = 0,
     SYSCALL = 1,
     ADD = 2,
@@ -722,9 +732,23 @@ void write_cmp_to_flags(T a, T b) {
     flags = ((flags >> 5u) << 5u) + to_write;
 }
 
+unsigned call(unsigned address_to) {
+    unsigned to_return = REGISTERS[15] + 1;
+    MEMORY[REGISTERS[14]] = REGISTERS[15] + 1;
+    REGISTERS[14]--;
+    REGISTERS[15] = address_to;
+    return to_return;
+}
+
+void jump(unsigned condition, unsigned address_to) {
+    if ((flags & (1u << condition)) != 0) {
+        REGISTERS[15] = address_to;
+    }
+}
+
 //-----------------------------Execution--------------------------------------
 
-void execute_bin_command(unsigned bin) {
+int execute_bin_command(unsigned bin) {
     unsigned command_code = bin >> 24u;
 
     switch (codes_to_types[command_code]) {
@@ -732,6 +756,34 @@ void execute_bin_command(unsigned bin) {
             unsigned reg = (bin >> 20u) & 15u;
 
             unsigned mem = (bin << 12u) >> 12u;
+
+            switch (command_code) {
+                case LOAD: {
+                    REGISTERS[reg] = MEMORY[mem];
+                    break;
+                }
+
+                case STORE: {
+                    MEMORY[mem] = REGISTERS[reg];
+                    break;
+                }
+
+                case LOAD2: {
+                    REGISTERS[reg] = MEMORY[mem];
+                    REGISTERS[reg + 1] = MEMORY[mem];
+                    break;
+                }
+
+                case STORE2: {
+                    MEMORY[mem] = REGISTERS[reg];
+                    MEMORY[mem + 1] = REGISTERS[reg + 1];
+                    break;
+                }
+
+                default: {
+                    break;
+                }
+            }
 
             break;
         }
@@ -743,19 +795,21 @@ void execute_bin_command(unsigned bin) {
 
             int oper = get_operand_from_bin((bin << 16u) >> 16u, 15u);
 
+            REGISTERS[reg2] += oper;
+
             switch (command_code) {
                 case ADD: {
-                    REGISTERS[reg1] += REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] += REGISTERS[reg2];
                     break;
                 }
 
                 case SUB: {
-                    REGISTERS[reg1] -= REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] -= REGISTERS[reg2];
                     break;
                 }
 
                 case MUL: {
-                    unsigned long long res = REGISTERS[reg1] * (REGISTERS[reg2] + oper);
+                    unsigned long long res = REGISTERS[reg1] * (REGISTERS[reg2]);
                     REGISTERS[reg1] = (res << 32u) >> 32u;
                     REGISTERS[reg1 + 1] = res >> 32u;
                     break;
@@ -763,38 +817,42 @@ void execute_bin_command(unsigned bin) {
 
                 case DIV: {
                     unsigned long long first = get_two_reg(reg1);
-                    REGISTERS[reg1] = first / (REGISTERS[reg2] + oper);
-                    REGISTERS[reg1 + 1] = first % (REGISTERS[reg2] + oper);
+                    if (REGISTERS[reg2] == 0) {
+                        fout << "EXECUTION ERROR: division by zero";
+                        return 1;
+                    }
+                    REGISTERS[reg1] = first / (REGISTERS[reg2]);
+                    REGISTERS[reg1 + 1] = first % (REGISTERS[reg2]);
                     break;
                 }
 
                 case SHL: {
-                    REGISTERS[reg1] <<= REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] <<= REGISTERS[reg2];
                     break;
                 }
 
                 case SHR: {
-                    REGISTERS[reg1] >>= REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] >>= REGISTERS[reg2];
                     break;
                 }
 
                 case AND: {
-                    REGISTERS[reg1] &= REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] &= REGISTERS[reg2];
                     break;
                 }
 
                 case OR: {
-                    REGISTERS[reg1] |= REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] |= REGISTERS[reg2];
                     break;
                 }
 
                 case XOR: {
-                    REGISTERS[reg1] ^= REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] ^= REGISTERS[reg2];
                     break;
                 }
 
                 case MOV: {
-                    REGISTERS[reg1] = REGISTERS[reg2] + oper;
+                    REGISTERS[reg1] = REGISTERS[reg2];
                     break;
                 }
 
@@ -802,7 +860,7 @@ void execute_bin_command(unsigned bin) {
                     double first = to_dbl(get_two_reg(reg1));
                     double second = to_dbl(get_two_reg(reg2));
 
-                    unsigned long long res = to_ull(first + second + (double) oper);
+                    unsigned long long res = to_ull(first + second);
 
                     put_two_reg(res, reg1);
 
@@ -813,7 +871,7 @@ void execute_bin_command(unsigned bin) {
                     double first = to_dbl(get_two_reg(reg1));
                     double second = to_dbl(get_two_reg(reg2));
 
-                    unsigned long long res = to_ull(first - (second + (double) oper));
+                    unsigned long long res = to_ull(first - second);
 
                     put_two_reg(res, reg1);
 
@@ -824,7 +882,7 @@ void execute_bin_command(unsigned bin) {
                     double first = to_dbl(get_two_reg(reg1));
                     double second = to_dbl(get_two_reg(reg2));
 
-                    unsigned long long res = to_ull(first * (second + (double) oper));
+                    unsigned long long res = to_ull(first * second);
 
                     put_two_reg(res, reg1);
 
@@ -835,7 +893,12 @@ void execute_bin_command(unsigned bin) {
                     double first = to_dbl(get_two_reg(reg1));
                     double second = to_dbl(get_two_reg(reg2));
 
-                    unsigned long long res = to_ull(first / (second + (double) oper));
+                    if (second == 0) {
+                        fout << "EXECUTION ERROR: division by zero";
+                        return 1;
+                    }
+
+                    unsigned long long res = to_ull(first / second);
 
                     put_two_reg(res, reg1);
 
@@ -843,7 +906,7 @@ void execute_bin_command(unsigned bin) {
                 }
 
                 case ITOD: {
-                    put_two_reg(to_ull((double) (REGISTERS[reg2] + oper)), reg1);
+                    put_two_reg(to_ull((double) (REGISTERS[reg2])), reg1);
                     break;
                 }
 
@@ -860,14 +923,13 @@ void execute_bin_command(unsigned bin) {
                     break;
                 }
 
-//TODO: узнать про call (число подаётся или строка) и реализовать
-
                 case CALL: {
+                    REGISTERS[reg1] = call(REGISTERS[reg2]);
                     break;
                 }
 
                 case CMP: {
-                    write_cmp_to_flags<unsigned long long>(REGISTERS[reg1], REGISTERS[reg2] + oper);
+                    write_cmp_to_flags<unsigned long long>(REGISTERS[reg1], REGISTERS[reg2]);
                     break;
                 }
 
@@ -881,47 +943,241 @@ void execute_bin_command(unsigned bin) {
                 }
 
                 case LOADR: {
-                    REGISTERS[reg1] = MEMORY[REGISTERS[reg2] + oper];
+                    REGISTERS[reg1] = MEMORY[REGISTERS[reg2]];
                     break;
                 }
 
                 case STORER: {
-                    MEMORY[REGISTERS[reg2] + oper] = REGISTERS[reg1];
+                    MEMORY[REGISTERS[reg2]] = REGISTERS[reg1];
                     break;
                 }
 
                 case LOADR2: {
-                    REGISTERS[reg1] = MEMORY[REGISTERS[reg2] + oper];
-                    REGISTERS[reg1 + 1] = MEMORY[REGISTERS[reg2] + oper + 1];
+                    REGISTERS[reg1] = MEMORY[REGISTERS[reg2]];
+                    REGISTERS[reg1 + 1] = MEMORY[REGISTERS[reg2] + 1];
 
                     break;
                 }
 
                 case STORER2: {
-                    MEMORY[REGISTERS[reg2] + oper] = REGISTERS[reg1];
-                    MEMORY[REGISTERS[reg2] + oper + 1] = REGISTERS[reg1 + 1];
+                    MEMORY[REGISTERS[reg2]] = REGISTERS[reg1];
+                    MEMORY[REGISTERS[reg2] + 1] = REGISTERS[reg1 + 1];
 
                     break;
                 }
 
                 default: {
-                    fout << "ERROR: Unknown command code";
+                    break;
+                }
+            }
+
+            REGISTERS[reg2] -= oper;
+
+            break;
+        }
+
+        case RI: {
+            unsigned reg = (bin >> 20u) & 15u;
+
+            unsigned oper = get_operand_from_bin((bin << 12u) >> 12u, 19u);
+
+            switch (command_code) {
+                case HALT: {
+                    REGISTERS[reg] = oper;
+                    return 1;
+                }
+
+                case SYSCALL: {
+                    switch (oper) {
+                        case EXIT: {
+                            return 0;
+                        }
+
+                        case SCANINT: {
+                            cin >> REGISTERS[reg];
+                            break;
+                        }
+
+                        case SCANDOUBLE: {
+                            cin >> ull_and_dbl.dbl;
+                            put_two_reg(ull_and_dbl.ull, reg);
+                            ull_and_dbl.ull = 0;
+                            break;
+                        }
+
+                        case PRINTINT: {
+                            fout << REGISTERS[reg];
+                            break;
+                        }
+
+                        case PRINTDOUBLE: {
+                            fout << to_dbl(get_two_reg(reg));
+                            break;
+                        }
+
+                        case GETCHAR: {
+                            char c;
+                            cin >> c;
+                            REGISTERS[reg] = (unsigned) c;
+                            break;
+                        }
+
+                        case PUTCHAR: {
+                            if (REGISTERS[reg] > 255) {
+                                fout << "EXECUTION ERROR: cannot convert register value to a char";
+                            } else {
+                                fout << (char) REGISTERS[reg];
+                            }
+                            break;
+                        }
+
+                        default: {
+                            fout << "EXECUTION ERROR: not a valid syscall code";
+                        }
+                    }
+                    break;
+                }
+
+                case ADDI: {
+                    REGISTERS[reg] += oper;
+                    break;
+                }
+
+                case SUBI: {
+                    REGISTERS[reg] -= oper;
+                    break;
+                }
+
+                case MULI: {
+                    unsigned long long res = REGISTERS[reg] * oper;
+                    REGISTERS[reg] = (res << 32u) >> 32u;
+                    REGISTERS[reg + 1] = res >> 32u;
+                    break;
+                }
+
+                case DIVI: {
+                    unsigned long long first = get_two_reg(reg);
+                    if (oper == 0) {
+                        fout << "EXECUTION ERROR: division by zero";
+                        return 1;
+                    }
+                    REGISTERS[reg] = first / oper;
+                    REGISTERS[reg + 1] = first % oper;
+                    break;
+                }
+
+                case LC: {
+                    REGISTERS[reg] = oper;
+                    break;
+                }
+
+                case SHLI: {
+                    REGISTERS[reg] <<= oper;
+                    break;
+                }
+
+                case SHRI: {
+                    REGISTERS[reg] >>= oper;
+                    break;
+                }
+
+                case ANDI: {
+                    REGISTERS[reg] &= oper;
+                    break;
+                }
+
+                case ORI: {
+                    REGISTERS[reg] |= oper;
+                    break;
+                }
+
+                case XORI: {
+                    REGISTERS[reg] ^= oper;
+                    break;
+                }
+
+                case NOT: {
+                    REGISTERS[reg] = ~REGISTERS[reg];
+                }
+
+                case PUSH: {
+                    MEMORY[REGISTERS[14]] = REGISTERS[reg] + oper;
+                    REGISTERS[14]--;
+                    break;
+                }
+
+                case POP: {
+                    REGISTERS[reg] = MEMORY[REGISTERS[14]] + oper;
+                    REGISTERS[14]++;
+                    break;
+                }
+
+                case RET: {
+                    REGISTERS[15] = MEMORY[REGISTERS[14]];
+                    REGISTERS[14] += oper + 1;
+                }
+
+                case CMPI: {
+                    write_cmp_to_flags<unsigned long long>(REGISTERS[reg], oper);
+                    break;
+                }
+
+                default: {
+                    break;
                 }
             }
 
             break;
         }
 
-        case RI: {
-            unsigned reg1 = (bin >> 20u) & 15u;
-
+        case J: {
             unsigned oper = (bin << 12u) >> 12u;
 
-            break;
-        }
+            switch (command_code) {
+                case CALLI: {
+                    call(oper);
+                    break;
+                }
 
-        case J: {
-            unsigned oper = get_operand_from_bin((bin << 12u) >> 12u, 19u);
+                case JMP: {
+                    REGISTERS[15] = oper;
+                    break;
+                }
+
+                case JEQ: {
+                    jump(0, oper);
+                    break;
+                }
+
+                case JNE: {
+                    jump(1, oper);
+                    break;
+                }
+
+                case JG: {
+                    jump(2, oper);
+                    break;
+                }
+
+                case JL: {
+                    jump(3, oper);
+                    break;
+                }
+
+                case JGE: {
+                    jump(4, oper);
+                    break;
+                }
+
+                case JLE: {
+                    jump(5, oper);
+                    break;
+                }
+
+                default: {
+                    break;
+                }
+            }
 
             break;
         }
@@ -930,6 +1186,8 @@ void execute_bin_command(unsigned bin) {
             fout << "ERROR: Unknown command type";
         }
     }
+
+    return 0;
 }
 
 //-------------------------------Main-----------------------------------------
