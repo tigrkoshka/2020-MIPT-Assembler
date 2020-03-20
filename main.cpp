@@ -1,13 +1,20 @@
 #include <iostream>
-#include <map>
+#include <fstream>
+#include <bitset>
+#include <ios>
+#include <unordered_map>
 #include <vector>
 
 using namespace std;
 
+ifstream fin;
+ofstream binary;
+ofstream fout;
+
 const unsigned MEMORY_SIZE = 1u << 20u;
 const unsigned REGISTER_NUM = 1u << 4u;
 
-enum code {
+enum codes {
     HALT = 0,
     SYSCALL = 1,
     ADD = 2,
@@ -62,75 +69,287 @@ enum code {
     STORER2 = 71
 };
 
-enum command_types {
+enum types {
     RM = 0,
     RR = 1,
     RI = 2,
     J = 3
 };
 
-map<string, pair<unsigned, unsigned>> commands = {
-        {"halt",    {HALT,    RI}},
-        {"syscall", {SYSCALL, RI}},
-        {"add",     {ADD,     RR}},
-        {"addi",    {ADDI,    RI}},
-        {"sub",     {SUB,     RR}},
-        {"subi",    {SUBI,    RI}},
-        {"mul",     {MUL,     RR}},
-        {"muli",    {MULI,    RI}},
-        {"div",     {DIV,     RR}},
-        {"divi",    {DIVI,    RI}},
-        {"lc",      {LC,      RI}},
-        {"shl",     {SHL,     RR}},
-        {"shli",    {SHLI,    RI}},
-        {"shr",     {SHR,     RR}},
-        {"shri",    {SHRI,    RI}},
-        {"and",     {AND,     RR}},
-        {"andi",    {ANDI,    RI}},
-        {"or",      {OR,      RR}},
-        {"ori",     {ORI,     RI}},
-        {"xor",     {XOR,     RR}},
-        {"xori",    {XORI,    RI}},
-        {"not",     {NOT,     RI}},
-        {"mov",     {MOV,     RR}},
-        {"addd",    {ADDD,    RR}},
-        {"subd",    {SUBD,    RR}},
-        {"muld",    {MULD,    RR}},
-        {"divd",    {DIVD,    RR}},
-        {"itod",    {ITOD,    RR}},
-        {"dtoi",    {DTOI,    RR}},
-        {"push",    {PUSH,    RI}},
-        {"pop",     {POP,     RI}},
-        {"call",    {CALL,    RR}},
-        {"calli",   {CALLI,   RI}},
-        {"ret",     {RET,     RI}},
-        {"cmpl",    {CMP,     RR}},
-        {"cmpi",    {CMPI,    RI}},
-        {"cmpd",    {CMPD,    RR}},
-        {"jmp",     {JMP,     J}},
-        {"jne",     {JNE,     J}},
-        {"jeq",     {JEQ,     J}},
-        {"jle",     {JLE,     J}},
-        {"jl",      {JL,      J}},
-        {"jge",     {JGE,     J}},
-        {"jg",      {JG,      J}},
-        {"load",    {LOAD,    RM}},
-        {"store",   {STORE,   RM}},
-        {"load2",   {LOAD2,   RM}},
-        {"store2",  {STORE2,  RM}},
-        {"loadr",   {LOADR,   RR}},
-        {"storer",  {STORER,  RR}},
-        {"loadr2",  {LOADR2,  RR}},
-        {"storer2", {STORER2, RR}},
+union {
+    unsigned long long ull;
+    double dbl;
+} ull_and_dbl;
+
+unordered_map<unsigned, unsigned> codes_to_types = {
+        {HALT,    RI},
+        {SYSCALL, RI},
+        {ADD,     RR},
+        {ADDI,    RI},
+        {SUB,     RR},
+        {SUBI,    RI},
+        {MUL,     RR},
+        {MULI,    RI},
+        {DIV,     RR},
+        {DIVI,    RI},
+        {LC,      RI},
+        {SHL,     RR},
+        {SHLI,    RI},
+        {SHR,     RR},
+        {SHRI,    RI},
+        {AND,     RR},
+        {ANDI,    RI},
+        {OR,      RR},
+        {ORI,     RI},
+        {XOR,     RR},
+        {XORI,    RI},
+        {NOT,     RI},
+        {MOV,     RR},
+        {ADDD,    RR},
+        {SUBD,    RR},
+        {MULD,    RR},
+        {DIVD,    RR},
+        {ITOD,    RR},
+        {DTOI,    RR},
+        {PUSH,    RI},
+        {POP,     RI},
+        {CALL,    RR},
+        {CALLI,   J},
+        {RET,     RI},
+        {CMP,     RR},
+        {CMPI,    RI},
+        {CMPD,    RR},
+        {JMP,     J},
+        {JNE,     J},
+        {JEQ,     J},
+        {JLE,     J},
+        {JL,      J},
+        {JGE,     J},
+        {JG,      J},
+        {LOAD,    RM},
+        {STORE,   RM},
+        {LOAD2,   RM},
+        {STORE2,  RM},
+        {LOADR,   RR},
+        {STORER,  RR},
+        {LOADR2,  RR},
+        {STORER2, RR},
 };
+
+unordered_map<string, unsigned> commands_to_codes = {
+        {"halt",    HALT},
+        {"syscall", SYSCALL},
+        {"add",     ADD},
+        {"addi",    ADDI},
+        {"sub",     SUB},
+        {"subi",    SUBI},
+        {"mul",     MUL},
+        {"muli",    MULI},
+        {"div",     DIV},
+        {"divi",    DIVI},
+        {"lc",      LC},
+        {"shl",     SHL},
+        {"shli",    SHLI},
+        {"shr",     SHR},
+        {"shri",    SHRI},
+        {"and",     AND},
+        {"andi",    ANDI},
+        {"or",      OR},
+        {"ori",     ORI},
+        {"xor",     XOR},
+        {"xori",    XORI},
+        {"not",     NOT},
+        {"mov",     MOV},
+        {"addd",    ADDD},
+        {"subd",    SUBD},
+        {"muld",    MULD},
+        {"divd",    DIVD},
+        {"itod",    ITOD},
+        {"dtoi",    DTOI},
+        {"push",    PUSH},
+        {"pop",     POP},
+        {"call",    CALL},
+        {"calli",   CALLI},
+        {"ret",     RET},
+        {"cmp",     CMP},
+        {"cmpi",    CMPI},
+        {"cmpd",    CMPD},
+        {"jmp",     JMP},
+        {"jne",     JNE},
+        {"jeq",     JEQ},
+        {"jle",     JLE},
+        {"jl",      JL},
+        {"jge",     JGE},
+        {"jg",      JG},
+        {"load",    LOAD},
+        {"store",   STORE},
+        {"load2",   LOAD2},
+        {"store2",  STORE2},
+        {"loadr",   LOADR},
+        {"storer",  STORER},
+        {"loadr2",  LOADR2},
+        {"storer2", STORER2},
+};
+
+unordered_map<unsigned, string> codes_to_commands = {
+        {HALT,    "halt"},
+        {SYSCALL, "syscall"},
+        {ADD,     "add"},
+        {ADDI,    "addi"},
+        {SUB,     "sub"},
+        {SUBI,    "subi"},
+        {MUL,     "mul"},
+        {MULI,    "muli"},
+        {DIV,     "div"},
+        {DIVI,    "divi"},
+        {LC,      "lc"},
+        {SHL,     "shl"},
+        {SHLI,    "shli"},
+        {SHR,     "shr"},
+        {SHRI,    "shri"},
+        {AND,     "and"},
+        {ANDI,    "andi"},
+        {OR,      "or"},
+        {ORI,     "ori"},
+        {XOR,     "xor"},
+        {XORI,    "xori"},
+        {NOT,     "not"},
+        {MOV,     "mov"},
+        {ADDD,    "addd"},
+        {SUBD,    "subd"},
+        {MULD,    "muld"},
+        {DIVD,    "divd"},
+        {ITOD,    "itod"},
+        {DTOI,    "dtoi"},
+        {PUSH,    "push"},
+        {POP,     "pop"},
+        {CALL,    "call"},
+        {CALLI,   "calli"},
+        {RET,     "ret"},
+        {CMP,     "cmp"},
+        {CMPI,    "cmpi"},
+        {CMPD,    "cmpd"},
+        {JMP,     "jmp"},
+        {JNE,     "jne"},
+        {JEQ,     "jeq"},
+        {JLE,     "jle"},
+        {JL,      "jl"},
+        {JGE,     "jge"},
+        {JG,      "jg"},
+        {LOAD,    "load"},
+        {STORE,   "store"},
+        {LOAD2,   "load2"},
+        {STORE2,  "store2"},
+        {LOADR,   "loadr"},
+        {STORER,  "storer"},
+        {LOADR2,  "loadr2"},
+        {STORER2, "storer2"},
+};
+
+unordered_map<string, unsigned> marks;
 
 vector<unsigned> MEMORY(MEMORY_SIZE);
 vector<unsigned> REGISTERS(REGISTER_NUM);
-unsigned flags;
+
+/*
+ * 0 bit: ==
+ * 1 bit: !=
+ * 2 bit: >
+ * 3 bit: <
+ * 4 bit: >=
+ * 5 bit: <=
+ */
+
+unsigned flags = 0;
+
+unsigned current_command_number = 0;
+
+unsigned main_address;
+
+//------------------------Decompilation helpers-------------------------------
+
+int get_operand_from_bin(unsigned bin, unsigned max_power_of_two) {
+    if (bin >= 1u << max_power_of_two) {
+        return -(int) ((1u << (max_power_of_two + 1)) - bin);
+    } else {
+        return (int) bin;
+    }
+}
+
+string get_command_from_bin(unsigned bin) {
+    string command;
+
+    unsigned command_code = bin >> 24u;
+
+    command += codes_to_commands[command_code] + ' ';
+
+    switch (codes_to_types[command_code]) {
+        case RM: {
+            command += 'r' + to_string((bin >> 20u) & 15u) + ' ';
+
+            command += to_string((bin << 12u) >> 12u);
+
+            break;
+        }
+
+        case RR: {
+            command += 'r' + to_string((bin >> 20u) & 15u) + ' ';
+            command += 'r' + to_string((bin >> 16u) & 15u) + ' ';
+
+            command += to_string(get_operand_from_bin((bin << 16u) >> 16u, 15u));
+
+            break;
+        }
+
+        case RI: {
+            command += 'r' + to_string((bin >> 20u) & 15u) + ' ';
+
+            command += to_string((int) ((bin << 12u) >> 12u));
+
+            break;
+        }
+
+        case J: {
+            command += to_string(get_operand_from_bin((bin << 12u) >> 12u, 19u));
+
+            break;
+        }
+
+        default: {
+            fout << "ERROR: Unknown command type";
+        }
+    }
+
+    return command;
+}
+
+//------------------------Compilation helpers---------------------------------
+
+void print_command_bin(unsigned bin) {
+    if (bin == UINT32_MAX) {
+        return;
+    }
+
+    unsigned count = 31;
+
+    for (unsigned i = 1u << 31u; i > 0; i >>= 1u) {
+        fout << ((bin & i) >> count);
+        if (count == 24 || count == 20 || count == 16) {
+            fout << ' ';
+        }
+        count--;
+    }
+
+    fout << '\n';
+}
+
+bool check_mark(const string &arg) {
+    return marks.find(arg) != marks.end();
+}
 
 bool check_register(const string &arg) {
     if (arg.length() < 2 || arg[0] != 'r') {
-        cout << "COMPILATION ERROR: Invalid argument (register expected)";
+        fout << "COMPILATION ERROR: Invalid argument (register expected)\n";
         return false;
     }
 
@@ -139,7 +358,7 @@ bool check_register(const string &arg) {
          (arg[2] > '9' || arg[2] < '0' ||
           (arg[1] - '0') * 10 + (arg[2] - '0') > 15)) ||
         arg.length() > 3) {
-        cout << "COMPILATION ERROR: Invalid register number (from 0 to 15 is valid)";
+        fout << "COMPILATION ERROR: Invalid register number (from 0 to 15 is valid)\n";
         return false;
     }
 
@@ -148,9 +367,9 @@ bool check_register(const string &arg) {
 
 unsigned get_register(const string &arg) {
     if (arg.length() == 2) {
-        return (unsigned) (arg[1] - '0') << 20u;
+        return (unsigned) (arg[1] - '0');
     } else {
-        return (unsigned) ((arg[1] - '0') * 10 + (arg[2] - '0')) << 20u;
+        return (unsigned) ((arg[1] - '0') * 10 + (arg[2] - '0'));
     }
 }
 
@@ -160,12 +379,12 @@ bool check_address(const string &arg) {
     try {
         address = stoi(arg);
     } catch (exception &e) {
-        cout << "COMPILATION ERROR: Invalid argument (address expected)";
+        fout << "COMPILATION ERROR: Invalid argument (address expected)\n";
         return false;
     }
 
     if (address < 0 || (unsigned) address >= 1u << 20u) {
-        cout << "COMPILATION ERROR: Invalid address";
+        fout << "COMPILATION ERROR: Invalid address (from 0 to 2^20-1 is valid)\n";
         return false;
     }
 
@@ -182,111 +401,526 @@ bool check_operand(const string &arg, unsigned max_pow_of_two) {
     try {
         operand = stoi(arg);
     } catch (exception &e) {
-        cout << "COMPILATION ERROR: Invalid argument (operand expected)";
+        fout << "COMPILATION ERROR: Invalid argument (operand expected)\n";
         return false;
     }
 
     if (operand < -((int) (1u << max_pow_of_two)) || operand >= (int) (1u << max_pow_of_two)) {
-        cout << "COMPILATION ERROR: Invalid operand";
+        fout << "COMPILATION ERROR: Invalid operand\n";
         return false;
     }
 
     return true;
 }
 
-unsigned get_operand(const string &arg) {
+unsigned get_bin_from_operand(const string &arg) {
     return (unsigned) stoi(arg);
 }
 
-unsigned get_command_code(const string &command) {
+unsigned get_bin_from_command(string &command) {
     string arg;
 
-    unsigned command_code = commands[command].first << 24u;
+    unsigned command_code = commands_to_codes[command];
 
-    switch (commands[command].second) {
+    unsigned command_bin = command_code << 24u;
+
+    switch (codes_to_types[command_code]) {
         case RM: {
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_register(arg)) return 0;
-            command_code += get_register(arg) << 20u;
+            if (!check_register(arg)) return UINT32_MAX;
+            command_bin += get_register(arg) << 20u;
 
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_address(arg)) return 0;
-            command_code += get_address(arg);
+            if (!check_address(arg)) return UINT32_MAX;
+            command_bin += get_address(arg);
 
             break;
         }
 
         case RR: {
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_register(arg)) return 0;
-            command_code += get_register(arg) << 20u;
+            if (!check_register(arg)) return UINT32_MAX;
+            command_bin += get_register(arg) << 20u;
 
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_register(arg)) return 0;
-            command_code += get_register(arg) << 16u;
+            if (!check_register(arg)) return UINT32_MAX;
+            command_bin += get_register(arg) << 16u;
 
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_operand(arg, 15u)) return 0;
-            command_code += get_operand(arg);
-
-            cout << RR;
+            if (!check_operand(arg, 15u)) return UINT32_MAX;
+            command_bin += (get_bin_from_operand(arg) << 16u) >> 16u;
 
             break;
         }
 
         case RI: {
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_register(arg)) return 0;
-            command_code += get_register(arg) << 20u;
+            if (!check_register(arg)) return UINT32_MAX;
+            command_bin += get_register(arg) << 20u;
 
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_address(arg)) return 0;
-            command_code += get_address(arg);
+            if (!check_address(arg)) return UINT32_MAX;
+            command_bin += get_address(arg);
 
             break;
         }
 
         case J: {
-            cin >> arg;
+            fin >> arg;
 
-            if (!check_operand(arg, 19u)) return 0;
-            command_code += get_operand(arg);
+            unsigned bin_arg;
+
+            if (check_mark(arg)) {
+                bin_arg = marks[arg];
+            } else {
+                if (!check_operand(arg, 19u)) return UINT32_MAX;
+                bin_arg = get_bin_from_operand(arg);
+            }
+
+            command_bin += (bin_arg << 20u) >> 20u;
 
             break;
         }
 
         default: {
-            cout << "ERROR: Unknown command type";
+            fout << "ERROR: Unknown command type";
         }
     }
 
-    return command_code;
+    return command_bin;
 }
 
-int main() {
+bool get_marks() {
     string command;
-    cin >> command;
-    if (commands.find(command) == commands.end()) {
-        cout << "Unknown command";
-        return 0;
-    }
 
-    unsigned code = get_command_code(command);
+    bool return_status = true;
 
-    unsigned count = 31;
+    while (fin >> command) {
+        if (commands_to_codes.find(command) == commands_to_codes.end()) {
+            if (command == "end") {
+                break;
+            }
 
-    for (unsigned i = 1u << 31u; i > 0; i >>= 1u) {
-        cout << ((code & i) >> count);
-        if (count == 24 || count == 20 || count == 16) {
-            cout << ' ';
+            if(command[command.length() - 1] != ':') {
+                fout << "COMPILATION ERROR: invalid mark";
+                return_status = false;
+                break;
+            }
+
+            command.erase(command.length() - 1);
+
+            if (marks.find(command) == marks.end()) {
+                marks[command] = current_command_number;
+            } else {
+                fout << "COMPILATION ERROR: this mark already exists";
+                return_status = false;
+                break;
+            }
+
+        } else {
+            unsigned code = codes_to_types[commands_to_codes[command]];
+
+            string arg;
+            fin >> arg;
+
+            if (code != J) {
+                fin >> arg;
+            }
+
+            if (code == RR) {
+                fin >> arg;
+            }
+
+            current_command_number++;
         }
-        count--;
     }
+
+    fin.seekg(0);
+    current_command_number = 0;
+
+    return return_status;
+}
+
+bitset<4096> get_header_bitset() {
+    bitset<4096> res(0);
+    string s = "ThisIsFUPM2Exec";
+
+    for (char c : s) {
+        res |= (int) c;
+        res <<= 8;
+    }
+
+// TODO: узнать, что такое константы и данные программы и выводить их правильно
+
+    // code size
+    res <<= 32;
+    res |= (current_command_number << 2u);
+
+    // const size
+    res <<= 32;
+    res |= 0;
+
+    // data size
+    res <<= 32;
+    res |= 0;
+
+    // entering point address
+    res <<= 32;
+    res |= main_address;
+
+    // stack pointer
+    res <<= 32;
+    res |= MEMORY_SIZE - 1;
+
+    // empty
+    res <<= 3808;
+
+    return res;
+}
+
+void make_binary() {
+    binary << get_header_bitset();
+
+    for (int i = 0; i < current_command_number; i++) {
+        binary << bitset<32>(MEMORY[i]);
+    }
+}
+
+//----------------------------Compilation-------------------------------------
+
+void compile() {
+    bool check = get_marks();
+
+    if (!check) {
+        return;
+    }
+
+    string command;
+
+    while (fin >> command) {
+
+        if (command == "end") {
+            fin >> command;
+
+            if (marks.find(command) != marks.end()) {
+                main_address = marks[command];
+            } else {
+                if (!check_operand(command, 19u)) {
+                    fout << "COMPILATION ERROR: invalid main address";
+                } else {
+                    main_address = get_bin_from_operand(command);
+                }
+            }
+
+            break;
+        }
+
+        if (commands_to_codes.find(command) == commands_to_codes.end()) {
+            continue;
+        }
+
+        unsigned bin = get_bin_from_command(command);
+        if (bin == UINT32_MAX) {
+            MEMORY.clear();
+            return;
+        }
+
+        MEMORY[current_command_number] = bin;
+
+        current_command_number++;
+    }
+
+    make_binary();
+    MEMORY.clear();
+}
+
+//------------------------ Execution helpers----------------------------------
+
+double to_dbl(unsigned long long ull) {
+    ull_and_dbl.ull = ull;
+    double dbl = ull_and_dbl.dbl;
+    ull_and_dbl.ull = 0;
+    return dbl;
+}
+
+unsigned long long to_ull(double dbl) {
+    ull_and_dbl.dbl = dbl;
+    unsigned long long ull = ull_and_dbl.ull;
+    ull_and_dbl.ull = 0;
+    return ull;
+}
+
+unsigned long long get_two_reg(unsigned reg) {
+    return (((unsigned long long) REGISTERS[reg + 1]) << 32u) + REGISTERS[reg];
+}
+
+void put_two_reg(unsigned long long to_put, unsigned reg) {
+    REGISTERS[reg] = (to_put << 32u) >> 32u;
+    REGISTERS[reg + 1] = to_put >> 32u;
+}
+
+template<typename T>
+void write_cmp_to_flags(T a, T b) {
+    unsigned to_write;
+
+    if (a > b) {
+        to_write =
+                (0u << 0u) +
+                (1u << 1u) +
+                (1u << 2u) +
+                (0u << 3u) +
+                (1u << 4u) +
+                (0u << 5u);
+    } else {
+        if (a == b) {
+            to_write =
+                    (1u << 0u) +
+                    (0u << 1u) +
+                    (0u << 2u) +
+                    (0u << 3u) +
+                    (1u << 4u) +
+                    (1u << 5u);
+        } else {
+            to_write =
+                    (0u << 0u) +
+                    (1u << 1u) +
+                    (0u << 2u) +
+                    (1u << 3u) +
+                    (0u << 4u) +
+                    (1u << 5u);
+        }
+    }
+
+    flags = ((flags >> 5u) << 5u) + to_write;
+}
+
+//-----------------------------Execution--------------------------------------
+
+void execute_bin_command(unsigned bin) {
+    unsigned command_code = bin >> 24u;
+
+    switch (codes_to_types[command_code]) {
+        case RM: {
+            unsigned reg = (bin >> 20u) & 15u;
+
+            unsigned mem = (bin << 12u) >> 12u;
+
+            break;
+        }
+
+        case RR: {
+            unsigned reg1 = (bin >> 20u) & 15u;
+
+            unsigned reg2 = (bin >> 16u) & 15u;
+
+            int oper = get_operand_from_bin((bin << 16u) >> 16u, 15u);
+
+            switch (command_code) {
+                case ADD: {
+                    REGISTERS[reg1] += REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case SUB: {
+                    REGISTERS[reg1] -= REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case MUL: {
+                    unsigned long long res = REGISTERS[reg1] * (REGISTERS[reg2] + oper);
+                    REGISTERS[reg1] = (res << 32u) >> 32u;
+                    REGISTERS[reg1 + 1] = res >> 32u;
+                    break;
+                }
+
+                case DIV: {
+                    unsigned long long first = get_two_reg(reg1);
+                    REGISTERS[reg1] = first / (REGISTERS[reg2] + oper);
+                    REGISTERS[reg1 + 1] = first % (REGISTERS[reg2] + oper);
+                    break;
+                }
+
+                case SHL: {
+                    REGISTERS[reg1] <<= REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case SHR: {
+                    REGISTERS[reg1] >>= REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case AND: {
+                    REGISTERS[reg1] &= REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case OR: {
+                    REGISTERS[reg1] |= REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case XOR: {
+                    REGISTERS[reg1] ^= REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case MOV: {
+                    REGISTERS[reg1] = REGISTERS[reg2] + oper;
+                    break;
+                }
+
+                case ADDD: {
+                    double first = to_dbl(get_two_reg(reg1));
+                    double second = to_dbl(get_two_reg(reg2));
+
+                    unsigned long long res = to_ull(first + second + (double) oper);
+
+                    put_two_reg(res, reg1);
+
+                    break;
+                }
+
+                case SUBD: {
+                    double first = to_dbl(get_two_reg(reg1));
+                    double second = to_dbl(get_two_reg(reg2));
+
+                    unsigned long long res = to_ull(first - (second + (double) oper));
+
+                    put_two_reg(res, reg1);
+
+                    break;
+                }
+
+                case MULD: {
+                    double first = to_dbl(get_two_reg(reg1));
+                    double second = to_dbl(get_two_reg(reg2));
+
+                    unsigned long long res = to_ull(first * (second + (double) oper));
+
+                    put_two_reg(res, reg1);
+
+                    break;
+                }
+
+                case DIVD: {
+                    double first = to_dbl(get_two_reg(reg1));
+                    double second = to_dbl(get_two_reg(reg2));
+
+                    unsigned long long res = to_ull(first / (second + (double) oper));
+
+                    put_two_reg(res, reg1);
+
+                    break;
+                }
+
+                case ITOD: {
+                    put_two_reg(to_ull((double) (REGISTERS[reg2] + oper)), reg1);
+                    break;
+                }
+
+                case DTOI: {
+                    unsigned long long res = floor(to_dbl(get_two_reg(reg2)));
+
+                    if (res >= (1ull << 32u)) {
+                        fout << "EXECUTION ERROR: cannot convert double to int";
+                        break;
+                    }
+
+                    REGISTERS[reg1] = res;
+
+                    break;
+                }
+
+//TODO: узнать про call (число подаётся или строка) и реализовать
+
+                case CALL: {
+                    break;
+                }
+
+                case CMP: {
+                    write_cmp_to_flags<unsigned long long>(REGISTERS[reg1], REGISTERS[reg2] + oper);
+                    break;
+                }
+
+                case CMPD: {
+                    double first = to_dbl(get_two_reg(reg1));
+                    double second = to_dbl(get_two_reg(reg2));
+
+                    write_cmp_to_flags<double>(first, second);
+
+                    break;
+                }
+
+                case LOADR: {
+                    REGISTERS[reg1] = MEMORY[REGISTERS[reg2] + oper];
+                    break;
+                }
+
+                case STORER: {
+                    MEMORY[REGISTERS[reg2] + oper] = REGISTERS[reg1];
+                    break;
+                }
+
+                case LOADR2: {
+                    REGISTERS[reg1] = MEMORY[REGISTERS[reg2] + oper];
+                    REGISTERS[reg1 + 1] = MEMORY[REGISTERS[reg2] + oper + 1];
+
+                    break;
+                }
+
+                case STORER2: {
+                    MEMORY[REGISTERS[reg2] + oper] = REGISTERS[reg1];
+                    MEMORY[REGISTERS[reg2] + oper + 1] = REGISTERS[reg1 + 1];
+
+                    break;
+                }
+
+                default: {
+                    fout << "ERROR: Unknown command code";
+                }
+            }
+
+            break;
+        }
+
+        case RI: {
+            unsigned reg1 = (bin >> 20u) & 15u;
+
+            unsigned oper = (bin << 12u) >> 12u;
+
+            break;
+        }
+
+        case J: {
+            unsigned oper = get_operand_from_bin((bin << 12u) >> 12u, 19u);
+
+            break;
+        }
+
+        default: {
+            fout << "ERROR: Unknown command type";
+        }
+    }
+}
+
+//-------------------------------Main-----------------------------------------
+
+int main() {
+    fin.open("../input.fasm");
+    binary.open("../binary");
+    fout.open("../output.txt");
+
+    compile();
+
+    fin.close();
+    binary.close();
+    fout.close();
 }
