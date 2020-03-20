@@ -4,6 +4,7 @@
 #include <ios>
 #include <unordered_map>
 #include <vector>
+#include <cmath>
 
 using namespace std;
 
@@ -18,8 +19,8 @@ struct buffer {
 };
 
 union {
-    char* buff;
-    buffer* rd_buff;
+    char *buff;
+    buffer *rd_buff;
 } bin_rw;
 
 const unsigned MEMORY_SIZE = 1u << 20u;
@@ -136,7 +137,7 @@ unordered_map<unsigned, unsigned> codes_to_types = {
         {POP,     RI},
         {CALL,    RR},
         {CALLI,   J},
-        {RET,     RI},
+        {RET,     J},
         {CMP,     RR},
         {CMPI,    RI},
         {CMPD,    RR},
@@ -297,6 +298,8 @@ int get_operand_from_bin(unsigned bin, unsigned max_power_of_two) {
     }
 }
 
+//---------------------------Decompilation------------------------------------
+
 string get_command_from_bin(unsigned bin) {
     string command;
 
@@ -344,8 +347,6 @@ string get_command_from_bin(unsigned bin) {
     return command;
 }
 
-//---------------------------Decompilation------------------------------------
-
 void decompile() {
     binary.seekg(16);
 
@@ -389,7 +390,8 @@ bool check_mark(const string &arg) {
 
 bool check_register(const string &arg) {
     if (arg.length() < 2 || arg[0] != 'r') {
-        fout << "COMPILATION ERROR: Invalid argument (register expected)\n";
+        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+                "): Invalid argument (register expected)\n";
         return false;
     }
 
@@ -398,7 +400,8 @@ bool check_register(const string &arg) {
          (arg[2] > '9' || arg[2] < '0' ||
           (arg[1] - '0') * 10 + (arg[2] - '0') > 15)) ||
         arg.length() > 3) {
-        fout << "COMPILATION ERROR: Invalid register number (from 0 to 15 is valid)\n";
+        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+                "): Invalid register number (from 0 to 15 is valid)\n";
         return false;
     }
 
@@ -419,12 +422,14 @@ bool check_address(const string &arg) {
     try {
         address = stoi(arg);
     } catch (exception &e) {
-        fout << "COMPILATION ERROR: Invalid argument (address expected)\n";
+        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+                "): Invalid argument (address expected)\n";
         return false;
     }
 
     if (address < 0 || (unsigned) address >= 1u << 20u) {
-        fout << "COMPILATION ERROR: Invalid address (from 0 to 2^20-1 is valid)\n";
+        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+                "): Invalid address (from 0 to 2^20-1 is valid)\n";
         return false;
     }
 
@@ -441,12 +446,13 @@ bool check_operand(const string &arg, unsigned max_pow_of_two) {
     try {
         operand = stoi(arg);
     } catch (exception &e) {
-        fout << "COMPILATION ERROR: Invalid argument (operand expected)\n";
+        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+                "): Invalid argument (operand expected)\n";
         return false;
     }
 
     if (operand < -((int) (1u << max_pow_of_two)) || operand >= (int) (1u << max_pow_of_two)) {
-        fout << "COMPILATION ERROR: Invalid operand\n";
+        fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): Invalid operand\n";
         return false;
     }
 
@@ -456,6 +462,8 @@ bool check_operand(const string &arg, unsigned max_pow_of_two) {
 unsigned get_bin_from_operand(const string &arg) {
     return (unsigned) stoi(arg);
 }
+
+//----------------------------Compilation-------------------------------------
 
 unsigned get_bin_from_command(string &command) {
     string arg;
@@ -548,8 +556,13 @@ bool get_marks() {
                 break;
             }
 
-            if(command[command.length() - 1] != ':') {
-                fout << "COMPILATION ERROR: invalid mark";
+            if (command[0] == ';') {
+                getline(fin, command);
+                continue;
+            }
+
+            if (command[command.length() - 1] != ':') {
+                fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): invalid mark";
                 return_status = false;
                 break;
             }
@@ -559,7 +572,7 @@ bool get_marks() {
             if (marks.find(command) == marks.end()) {
                 marks[command] = current_command_number;
             } else {
-                fout << "COMPILATION ERROR: this mark already exists";
+                fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): this mark already exists";
                 return_status = false;
                 break;
             }
@@ -618,13 +631,11 @@ void make_binary() {
     free(empty);
 
     // code
-    for (int i = 0; i < current_command_number; i++) {
+    for (unsigned i = 0; i < current_command_number; i++) {
         bin_rw.rd_buff->ui = MEMORY[i];
         binary.write(bin_rw.buff, 4);
     }
 }
-
-//----------------------------Compilation-------------------------------------
 
 void compile() {
     bool check = get_marks();
@@ -644,13 +655,18 @@ void compile() {
                 main_address = marks[command];
             } else {
                 if (!check_operand(command, 19u)) {
-                    fout << "COMPILATION ERROR: invalid main address";
+                    fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): invalid main address";
                 } else {
                     main_address = get_bin_from_operand(command);
                 }
             }
 
             break;
+        }
+
+        if (command[0] == ';') {
+            getline(fin, command);
+            continue;
         }
 
         if (commands_to_codes.find(command) == commands_to_codes.end()) {
@@ -733,9 +749,9 @@ void write_cmp_to_flags(T a, T b) {
 }
 
 unsigned call(unsigned address_to) {
-    unsigned to_return = REGISTERS[15] + 1;
-    MEMORY[REGISTERS[14]] = REGISTERS[15] + 1;
+    unsigned to_return = REGISTERS[15];
     REGISTERS[14]--;
+    MEMORY[REGISTERS[14]] = REGISTERS[15];
     REGISTERS[15] = address_to;
     return to_return;
 }
@@ -748,8 +764,10 @@ void jump(unsigned condition, unsigned address_to) {
 
 //-----------------------------Execution--------------------------------------
 
-int execute_bin_command(unsigned bin) {
+bool execute_bin_command(unsigned bin) {
     unsigned command_code = bin >> 24u;
+
+    REGISTERS[15]++;
 
     switch (codes_to_types[command_code]) {
         case RM: {
@@ -819,7 +837,7 @@ int execute_bin_command(unsigned bin) {
                     unsigned long long first = get_two_reg(reg1);
                     if (REGISTERS[reg2] == 0) {
                         fout << "EXECUTION ERROR: division by zero";
-                        return 1;
+                        return false;
                     }
                     REGISTERS[reg1] = first / (REGISTERS[reg2]);
                     REGISTERS[reg1 + 1] = first % (REGISTERS[reg2]);
@@ -895,7 +913,7 @@ int execute_bin_command(unsigned bin) {
 
                     if (second == 0) {
                         fout << "EXECUTION ERROR: division by zero";
-                        return 1;
+                        return false;
                     }
 
                     unsigned long long res = to_ull(first / second);
@@ -984,13 +1002,13 @@ int execute_bin_command(unsigned bin) {
             switch (command_code) {
                 case HALT: {
                     REGISTERS[reg] = oper;
-                    return 1;
+                    return false;
                 }
 
                 case SYSCALL: {
                     switch (oper) {
                         case EXIT: {
-                            return 0;
+                            return false;
                         }
 
                         case SCANINT: {
@@ -1059,7 +1077,7 @@ int execute_bin_command(unsigned bin) {
                     unsigned long long first = get_two_reg(reg);
                     if (oper == 0) {
                         fout << "EXECUTION ERROR: division by zero";
-                        return 1;
+                        return false;
                     }
                     REGISTERS[reg] = first / oper;
                     REGISTERS[reg + 1] = first % oper;
@@ -1098,11 +1116,12 @@ int execute_bin_command(unsigned bin) {
 
                 case NOT: {
                     REGISTERS[reg] = ~REGISTERS[reg];
+                    break;
                 }
 
                 case PUSH: {
-                    MEMORY[REGISTERS[14]] = REGISTERS[reg] + oper;
                     REGISTERS[14]--;
+                    MEMORY[REGISTERS[14]] = REGISTERS[reg] + oper;
                     break;
                 }
 
@@ -1110,11 +1129,6 @@ int execute_bin_command(unsigned bin) {
                     REGISTERS[reg] = MEMORY[REGISTERS[14]] + oper;
                     REGISTERS[14]++;
                     break;
-                }
-
-                case RET: {
-                    REGISTERS[15] = MEMORY[REGISTERS[14]];
-                    REGISTERS[14] += oper + 1;
                 }
 
                 case CMPI: {
@@ -1136,6 +1150,12 @@ int execute_bin_command(unsigned bin) {
             switch (command_code) {
                 case CALLI: {
                     call(oper);
+                    break;
+                }
+
+                case RET: {
+                    REGISTERS[15] = MEMORY[REGISTERS[14]];
+                    REGISTERS[14] += oper + 1;
                     break;
                 }
 
@@ -1187,7 +1207,37 @@ int execute_bin_command(unsigned bin) {
         }
     }
 
-    return 0;
+    return true;
+}
+
+void execute() {
+    binary.seekg(16);
+    binary.read(bin_rw.buff, 4);
+    unsigned command_num = (bin_rw.rd_buff->ui >> 2u);
+
+    binary.seekg(28);
+
+    binary.read(bin_rw.buff, 4);
+    REGISTERS[15] = bin_rw.rd_buff->ui;
+
+    binary.read(bin_rw.buff, 4);
+    REGISTERS[14] = bin_rw.rd_buff->ui;
+
+    binary.seekg(512);
+
+    for (unsigned i = 0; i < command_num; i++) {
+        binary.read(bin_rw.buff, 4);
+        MEMORY[i] = bin_rw.rd_buff->ui;
+    }
+
+    while (REGISTERS[15] < command_num) {
+        if (!execute_bin_command(MEMORY[REGISTERS[15]])) {
+            break;
+        }
+//        cout << MEMORY[MEMORY_SIZE - 1] << "                " << MEMORY_SIZE - REGISTERS[14] - 1 << '\n'
+//             << MEMORY[MEMORY_SIZE - 2] << "                " << REGISTERS[15] <<'\n' << MEMORY[MEMORY_SIZE - 3]
+//             << '\n' << MEMORY[MEMORY_SIZE - 4] << "\n\n";
+    }
 }
 
 //-------------------------------Main-----------------------------------------
@@ -1200,6 +1250,8 @@ int main() {
     bin_rw.buff = new char[4];
 
     compile();
+
+    execute();
 
     decompile();
 
