@@ -10,7 +10,6 @@ using namespace std;
 
 ifstream fin;
 fstream binary;
-ofstream fout;
 ofstream origin;
 
 struct buffer {
@@ -288,6 +287,8 @@ unsigned current_command_number = 0;
 
 unsigned main_address;
 
+unsigned reserved_words = 0;
+
 //------------------------Decompilation helpers-------------------------------
 
 int get_operand_from_bin(unsigned bin, unsigned max_power_of_two) {
@@ -340,7 +341,7 @@ string get_command_from_bin(unsigned bin) {
         }
 
         default: {
-            fout << "ERROR: Unknown command type";
+            cout << "ERROR: Unknown command type";
         }
     }
 
@@ -374,14 +375,14 @@ void print_command_bin(unsigned bin) {
     unsigned count = 31;
 
     for (unsigned i = 1u << 31u; i > 0; i >>= 1u) {
-        fout << ((bin & i) >> count);
+        cout << ((bin & i) >> count);
         if (count == 24 || count == 20 || count == 16) {
-            fout << ' ';
+            cout << ' ';
         }
         count--;
     }
 
-    fout << '\n';
+    cout << '\n';
 }
 
 bool check_mark(const string &arg) {
@@ -390,7 +391,7 @@ bool check_mark(const string &arg) {
 
 bool check_register(const string &arg) {
     if (arg.length() < 2 || arg[0] != 'r') {
-        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+        cout << "COMPILATION ERROR (at " + to_string(current_command_number) +
                 "): Invalid argument (register expected)\n";
         return false;
     }
@@ -400,7 +401,7 @@ bool check_register(const string &arg) {
          (arg[2] > '9' || arg[2] < '0' ||
           (arg[1] - '0') * 10 + (arg[2] - '0') > 15)) ||
         arg.length() > 3) {
-        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+        cout << "COMPILATION ERROR (at " + to_string(current_command_number) +
                 "): Invalid register number (from 0 to 15 is valid)\n";
         return false;
     }
@@ -419,16 +420,20 @@ unsigned get_register(const string &arg) {
 bool check_address(const string &arg) {
     int address = 0;
 
+    if (marks.find(arg) != marks.end()) {
+        return true;
+    }
+
     try {
         address = stoi(arg);
     } catch (exception &e) {
-        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+        cout << "COMPILATION ERROR (at " + to_string(current_command_number) +
                 "): Invalid argument (address expected)\n";
         return false;
     }
 
     if (address < 0 || (unsigned) address >= 1u << 20u) {
-        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+        cout << "COMPILATION ERROR (at " + to_string(current_command_number) +
                 "): Invalid address (from 0 to 2^20-1 is valid)\n";
         return false;
     }
@@ -437,6 +442,9 @@ bool check_address(const string &arg) {
 }
 
 unsigned get_address(const string &arg) {
+    if (marks.find(arg) != marks.end()) {
+        return marks[arg];
+    }
     return (unsigned) stoi(arg);
 }
 
@@ -446,13 +454,13 @@ bool check_operand(const string &arg, unsigned max_pow_of_two) {
     try {
         operand = stoi(arg);
     } catch (exception &e) {
-        fout << "COMPILATION ERROR (at " + to_string(current_command_number) +
+        cout << "COMPILATION ERROR (at " + to_string(current_command_number) +
                 "): Invalid argument (operand expected)\n";
         return false;
     }
 
     if (operand < -((int) (1u << max_pow_of_two)) || operand >= (int) (1u << max_pow_of_two)) {
-        fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): Invalid operand\n";
+        cout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): Invalid operand\n";
         return false;
     }
 
@@ -500,6 +508,10 @@ unsigned get_bin_from_command(string &command) {
 
             fin >> arg;
 
+            if (command_code == CALL) {
+                break;
+            }
+
             if (!check_operand(arg, 15u)) return UINT32_MAX;
             command_bin += (get_bin_from_operand(arg) << 16u) >> 16u;
 
@@ -538,7 +550,7 @@ unsigned get_bin_from_command(string &command) {
         }
 
         default: {
-            fout << "ERROR: Unknown command type";
+            cout << "ERROR: Unknown command type";
         }
     }
 
@@ -556,13 +568,17 @@ bool get_marks() {
                 break;
             }
 
+            if (command == "word") {
+                continue;
+            }
+
             if (command[0] == ';') {
                 getline(fin, command);
                 continue;
             }
 
             if (command[command.length() - 1] != ':') {
-                fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): invalid mark";
+                cout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): invalid mark";
                 return_status = false;
                 break;
             }
@@ -572,22 +588,22 @@ bool get_marks() {
             if (marks.find(command) == marks.end()) {
                 marks[command] = current_command_number;
             } else {
-                fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): this mark already exists";
+                cout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): this mark already exists";
                 return_status = false;
                 break;
             }
 
         } else {
-            unsigned code = codes_to_types[commands_to_codes[command]];
+            unsigned type = codes_to_types[commands_to_codes[command]];
 
             string arg;
             fin >> arg;
 
-            if (code != J) {
+            if (type != J) {
                 fin >> arg;
             }
 
-            if (code == RR) {
+            if (type == RR && commands_to_codes[command] != CALL) {
                 fin >> arg;
             }
 
@@ -614,7 +630,7 @@ void make_binary() {
     binary.write(bin_rw.buff, 4);
 
     // data size
-    bin_rw.rd_buff->ui = 0;
+    bin_rw.rd_buff->ui = (reserved_words << 2u);
     binary.write(bin_rw.buff, 4);
 
     // entering point address
@@ -647,7 +663,6 @@ void compile() {
     string command;
 
     while (fin >> command) {
-
         if (command == "end") {
             fin >> command;
 
@@ -655,13 +670,18 @@ void compile() {
                 main_address = marks[command];
             } else {
                 if (!check_operand(command, 19u)) {
-                    fout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): invalid main address";
+                    cout << "COMPILATION ERROR (at " + to_string(current_command_number) + "): invalid main address";
                 } else {
                     main_address = get_bin_from_operand(command);
                 }
             }
 
             break;
+        }
+
+        if (command == "word") {
+            reserved_words++;
+            continue;
         }
 
         if (command[0] == ';') {
@@ -827,7 +847,7 @@ bool execute_bin_command(unsigned bin) {
                 }
 
                 case MUL: {
-                    unsigned long long res = REGISTERS[reg1] * (REGISTERS[reg2]);
+                    unsigned long long res = ((unsigned long long) REGISTERS[reg1]) * (REGISTERS[reg2]);
                     REGISTERS[reg1] = (res << 32u) >> 32u;
                     REGISTERS[reg1 + 1] = res >> 32u;
                     break;
@@ -836,7 +856,7 @@ bool execute_bin_command(unsigned bin) {
                 case DIV: {
                     unsigned long long first = get_two_reg(reg1);
                     if (REGISTERS[reg2] == 0) {
-                        fout << "EXECUTION ERROR: division by zero";
+                        cout << "EXECUTION ERROR: division by zero";
                         return false;
                     }
                     REGISTERS[reg1] = first / (REGISTERS[reg2]);
@@ -912,7 +932,7 @@ bool execute_bin_command(unsigned bin) {
                     double second = to_dbl(get_two_reg(reg2));
 
                     if (second == 0) {
-                        fout << "EXECUTION ERROR: division by zero";
+                        cout << "EXECUTION ERROR: division by zero";
                         return false;
                     }
 
@@ -932,7 +952,7 @@ bool execute_bin_command(unsigned bin) {
                     unsigned long long res = floor(to_dbl(get_two_reg(reg2)));
 
                     if (res >= (1ull << 32u)) {
-                        fout << "EXECUTION ERROR: cannot convert double to int";
+                        cout << "EXECUTION ERROR: cannot convert double to int";
                         break;
                     }
 
@@ -1024,12 +1044,12 @@ bool execute_bin_command(unsigned bin) {
                         }
 
                         case PRINTINT: {
-                            fout << REGISTERS[reg];
+                            cout << get_operand_from_bin(REGISTERS[reg], 31);
                             break;
                         }
 
                         case PRINTDOUBLE: {
-                            fout << to_dbl(get_two_reg(reg));
+                            cout << to_dbl(get_two_reg(reg));
                             break;
                         }
 
@@ -1042,15 +1062,15 @@ bool execute_bin_command(unsigned bin) {
 
                         case PUTCHAR: {
                             if (REGISTERS[reg] > 255) {
-                                fout << "EXECUTION ERROR: cannot convert register value to a char";
+                                cout << "EXECUTION ERROR: cannot convert register value to a char";
                             } else {
-                                fout << (char) REGISTERS[reg];
+                                cout << (char) REGISTERS[reg];
                             }
                             break;
                         }
 
                         default: {
-                            fout << "EXECUTION ERROR: not a valid syscall code";
+                            cout << "EXECUTION ERROR: not a valid syscall code";
                         }
                     }
                     break;
@@ -1067,7 +1087,7 @@ bool execute_bin_command(unsigned bin) {
                 }
 
                 case MULI: {
-                    unsigned long long res = REGISTERS[reg] * oper;
+                    unsigned long long res = ((unsigned long long) REGISTERS[reg]) * oper;
                     REGISTERS[reg] = (res << 32u) >> 32u;
                     REGISTERS[reg + 1] = res >> 32u;
                     break;
@@ -1076,7 +1096,7 @@ bool execute_bin_command(unsigned bin) {
                 case DIVI: {
                     unsigned long long first = get_two_reg(reg);
                     if (oper == 0) {
-                        fout << "EXECUTION ERROR: division by zero";
+                        cout << "EXECUTION ERROR: division by zero";
                         return false;
                     }
                     REGISTERS[reg] = first / oper;
@@ -1203,7 +1223,7 @@ bool execute_bin_command(unsigned bin) {
         }
 
         default: {
-            fout << "ERROR: Unknown command type";
+            cout << "ERROR: Unknown command type";
         }
     }
 
@@ -1243,10 +1263,9 @@ void execute() {
 //-------------------------------Main-----------------------------------------
 
 int main() {
-    fin.open("../input.fasm");
-    binary.open("../binary", fstream::in | fstream::out | fstream::binary | fstream::trunc);
-    fout.open("../output.txt");
-    origin.open("../origin.txt");
+    fin.open("input.fasm");
+    binary.open("binary", fstream::in | fstream::out | fstream::binary | fstream::trunc);
+    origin.open("origin.txt");
     bin_rw.buff = new char[4];
 
     compile();
@@ -1257,6 +1276,5 @@ int main() {
 
     fin.close();
     binary.close();
-    fout.close();
     origin.close();
 }
