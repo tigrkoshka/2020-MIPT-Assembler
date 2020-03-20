@@ -8,8 +8,19 @@
 using namespace std;
 
 ifstream fin;
-ofstream binary;
+fstream binary;
 ofstream fout;
+ofstream origin;
+
+struct buffer {
+    unsigned ui;
+    int i;
+};
+
+union {
+    char* buff;
+    buffer* rd_buff;
+} bin_rw;
 
 const unsigned MEMORY_SIZE = 1u << 20u;
 const unsigned REGISTER_NUM = 1u << 4u;
@@ -323,6 +334,25 @@ string get_command_from_bin(unsigned bin) {
     return command;
 }
 
+//---------------------------Decompilation------------------------------------
+
+void decompile() {
+    binary.seekg(16);
+
+    binary.read(bin_rw.buff, 4);
+    unsigned code_size = bin_rw.rd_buff->ui;
+
+    binary.seekg(512);
+
+    unsigned command_bin;
+
+    for (unsigned i = 0; i < (code_size >> 2u); i++) {
+        binary.read(bin_rw.buff, 4);
+        command_bin = bin_rw.rd_buff->ui;
+        origin << get_command_from_bin(command_bin) << '\n';
+    }
+}
+
 //------------------------Compilation helpers---------------------------------
 
 void print_command_bin(unsigned bin) {
@@ -548,48 +578,39 @@ bool get_marks() {
     return return_status;
 }
 
-bitset<4096> get_header_bitset() {
-    bitset<4096> res(0);
-    string s = "ThisIsFUPM2Exec";
-
-    for (char c : s) {
-        res |= (int) c;
-        res <<= 8;
-    }
-
-// TODO: узнать, что такое константы и данные программы и выводить их правильно
+void make_binary() {
+    // header
+    binary << "ThisIsFUPM2Exec" << '\0';
 
     // code size
-    res <<= 32;
-    res |= (current_command_number << 2u);
+    bin_rw.rd_buff->ui = (current_command_number << 2u);
+    binary.write(bin_rw.buff, 4);
 
     // const size
-    res <<= 32;
-    res |= 0;
+    bin_rw.rd_buff->ui = 0;
+    binary.write(bin_rw.buff, 4);
 
     // data size
-    res <<= 32;
-    res |= 0;
+    bin_rw.rd_buff->ui = 0;
+    binary.write(bin_rw.buff, 4);
 
     // entering point address
-    res <<= 32;
-    res |= main_address;
+    bin_rw.rd_buff->ui = main_address;
+    binary.write(bin_rw.buff, 4);
 
     // stack pointer
-    res <<= 32;
-    res |= MEMORY_SIZE - 1;
+    bin_rw.rd_buff->ui = MEMORY_SIZE - 1;
+    binary.write(bin_rw.buff, 4);
 
     // empty
-    res <<= 3808;
+    char *empty = (char *) malloc(476);
+    binary.write(empty, 476);
+    free(empty);
 
-    return res;
-}
-
-void make_binary() {
-    binary << get_header_bitset();
-
+    // code
     for (int i = 0; i < current_command_number; i++) {
-        binary << bitset<32>(MEMORY[i]);
+        bin_rw.rd_buff->ui = MEMORY[i];
+        binary.write(bin_rw.buff, 4);
     }
 }
 
@@ -915,12 +936,17 @@ void execute_bin_command(unsigned bin) {
 
 int main() {
     fin.open("../input.fasm");
-    binary.open("../binary");
+    binary.open("../binary", fstream::in | fstream::out | fstream::binary | fstream::trunc);
     fout.open("../output.txt");
+    origin.open("../origin.txt");
+    bin_rw.buff = new char[4];
 
     compile();
+
+    decompile();
 
     fin.close();
     binary.close();
     fout.close();
+    origin.close();
 }
