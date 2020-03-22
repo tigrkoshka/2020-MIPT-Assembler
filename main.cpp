@@ -508,10 +508,6 @@ unsigned get_bin_from_command(string &command) {
 
             fin >> arg;
 
-            if (command_code == CALL) {
-                break;
-            }
-
             if (!check_operand(arg, 15u)) return UINT32_MAX;
             command_bin += (get_bin_from_operand(arg) << 16u) >> 16u;
 
@@ -603,7 +599,7 @@ bool get_marks() {
                 fin >> arg;
             }
 
-            if (type == RR && commands_to_codes[command] != CALL) {
+            if (type == RR) {
                 fin >> arg;
             }
 
