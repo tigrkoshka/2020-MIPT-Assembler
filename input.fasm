@@ -1,5 +1,16 @@
+data2:
+    word
+    word
+    word
+    word
+    word
+    word
+    word
+    word
+    word
+    word
 print3:
-    syscall r7 102
+    syscall r3 102
     lc r0 10
     syscall r0 105
     ret 0
@@ -14,11 +25,27 @@ exit:
     lc r0 0
     syscall r0 0
 main:
-    lc r3 31415
-    lc r4 271828
-    mul r3 r4 0
-    calli print34
-    lc r5 print34
-    call r5 r5
+    lc r3 1
+    lc r4 1
+    shli r3 1
+    calli print3
+    shli r3 1
+    calli print3
+    shli r3 1
+    calli print3
+    shli r3 1
+    calli print3
+    shli r3 2
+    calli print3
+    shli r3 3
+    calli print3
+    shli r3 4
+    calli print3
+    shli r3 3
+    calli print3
+    shli r3 2
+    calli print3
+    shli r3 1
+    calli print3
     calli exit
     end main

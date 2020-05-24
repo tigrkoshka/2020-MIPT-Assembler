@@ -354,14 +354,24 @@ void decompile() {
     binary.read(bin_rw.buff, 4);
     unsigned code_size = bin_rw.rd_buff->ui;
 
+    binary.seekg(28);
+
+    binary.read(bin_rw.buff, 4);
+    unsigned start_address = bin_rw.rd_buff->ui;
+
     binary.seekg(512);
 
-    unsigned command_bin;
+    unsigned command_bin = 0;
+    string tab;
 
     for (unsigned i = 0; i < (code_size >> 2u); i++) {
+        if (i == start_address) {
+            origin << "main:\n";
+            tab = "    ";
+        }
         binary.read(bin_rw.buff, 4);
         command_bin = bin_rw.rd_buff->ui;
-        origin << get_command_from_bin(command_bin) << '\n';
+        origin << tab << get_command_from_bin(command_bin) << '\n';
     }
 }
 
@@ -531,7 +541,7 @@ unsigned get_bin_from_command(string &command) {
         case J: {
             fin >> arg;
 
-            unsigned bin_arg;
+            unsigned bin_arg = 0;
 
             if (check_mark(arg)) {
                 bin_arg = marks[arg];
@@ -731,7 +741,7 @@ void put_two_reg(unsigned long long to_put, unsigned reg) {
 
 template<typename T>
 void write_cmp_to_flags(T a, T b) {
-    unsigned to_write;
+    unsigned to_write = 0;
 
     if (a > b) {
         to_write =
@@ -1050,7 +1060,7 @@ bool execute_bin_command(unsigned bin) {
                         }
 
                         case GETCHAR: {
-                            char c;
+                            unsigned char c = 0;
                             cin >> c;
                             REGISTERS[reg] = (unsigned) c;
                             break;
